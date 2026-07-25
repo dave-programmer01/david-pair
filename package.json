@@ -1,0 +1,17 @@
+{
+  "name": "david-pair",
+  "version": "1.0.0",
+  "description": "Pairing site that issues David-MD session IDs",
+  "main": "server.js",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "@whiskeysockets/baileys": "^6.7.16",
+    "express": "^4.21.2",
+    "pino": "^9.6.0"
+  }
+}

@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: david-pair
+    runtime: docker
+    plan: free
+    healthCheckPath: /healthz
+    envVars:
+      # Used only in the tutorial text sent to users.
+      - key: BOT_REPO
+        value: dave-programmer01/david-md
