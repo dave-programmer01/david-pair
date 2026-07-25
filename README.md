@@ -1,5 +1,7 @@
 # David-Pair
 
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/dave-programmer01/david-pair)
+
 The pairing site for [David-MD](https://github.com/dave-programmer01/david-md).
 
 A visitor enters their WhatsApp number, gets an 8-character pairing code, links
