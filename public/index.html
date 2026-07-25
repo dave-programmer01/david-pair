@@ -225,6 +225,7 @@ async function poll(id) {
   if (job.code) $("code").textContent = job.code;
 
   if (job.state === "waiting") statusText.textContent = "Waiting for you to enter the code…";
+  if (job.state === "linking") statusText.textContent = "Code accepted! Finishing the link…";
   if (job.state === "linked") statusText.textContent = "Linked! Generating your session ID…";
 
   if (job.state === "sent") {
