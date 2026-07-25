@@ -75,6 +75,12 @@ const assert = (ok, label, detail = "") => {
 };
 
 (async () => {
+  // Clear anything a previous run left behind, so the leak assertion at the
+  // end is actually about this run.
+  for (const f of fs.readdirSync(os.tmpdir()).filter((n) => n.startsWith("pair-"))) {
+    fs.rmSync(path.join(os.tmpdir(), f), { recursive: true, force: true });
+  }
+
   console.log("\n── Successful pair, with the 515 restart ──────────\n");
 
   const job = await startPairing("15551234567", { site: "https://example.com" });

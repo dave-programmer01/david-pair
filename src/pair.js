@@ -29,14 +29,26 @@ const publicView = (job) => ({
   code: job.code || null,
   error: job.error || null,
   sentTo: job.sentTo || null,
+  // A plain event trail so a failed pair can be diagnosed from the browser.
+  // Deliberately carries no credentials and no phone number.
+  trail: job.trail || [],
 });
+
+// Finished jobs hold no credentials — those are wiped the moment the socket
+// closes — so they're kept around a while longer purely so their event trail
+// can still be read after a failure.
+const FINISHED_TTL = 30 * 60_000;
+const isFinished = (job) => ["sent", "failed"].includes(job.state);
 
 function reap() {
   const now = Date.now();
   for (const [id, job] of jobs) {
-    if (now - job.createdAt > JOB_TTL) {
+    const age = now - job.createdAt;
+    if (isFinished(job)) {
+      if (age > FINISHED_TTL) jobs.delete(id);
+    } else if (age > JOB_TTL) {
       job.abort?.();
-      jobs.delete(id);
+      // Left in the map so the trail survives; reaped by the branch above.
     }
   }
 }
@@ -68,8 +80,18 @@ async function startPairing(phone, { site }) {
     error: null,
     sentTo: null,
     createdAt: Date.now(),
+    trail: [],
   };
   jobs.set(id, job);
+
+  // Every step is stamped with ms-since-start, which is what makes a stuck
+  // pair readable: you can see whether the code took too long to issue, or
+  // WhatsApp closed instantly, or nothing came back at all.
+  const note = (event, detail) => {
+    const at = Date.now() - job.createdAt;
+    job.trail.push({ at, event, ...(detail !== undefined ? { detail } : {}) });
+    console.log(`[${id}] +${at}ms ${event}${detail !== undefined ? ` ${detail}` : ""}`);
+  };
 
   (async () => {
     let sock = null;
@@ -92,7 +114,7 @@ async function startPairing(phone, { site }) {
       settled = true;
       job.state = "failed";
       job.error = message;
-      console.log(`[${id}] failed${code ? ` (${code})` : ""}: ${message}`);
+      note("failed", code ? `status=${code}` : message);
       await cleanup();
     };
 
@@ -101,11 +123,12 @@ async function startPairing(phone, { site }) {
     await fs.promises.mkdir(dir, { recursive: true });
     const { state, saveCreds } = await useMultiFileAuthState(dir);
     const { version } = await fetchLatestBaileysVersion();
+    note("wa-version", version.join("."));
 
     const deliver = async () => {
       settled = true;
       job.state = "linked";
-      console.log(`[${id}] linked, preparing session`);
+      note("connection-open");
 
       try {
         // creds.json isn't on disk until the first creds.update lands, and the
@@ -132,11 +155,11 @@ async function startPairing(phone, { site }) {
 
         job.state = "sent";
         job.sentTo = me.split("@")[0];
-        console.log(`[${id}] session delivered`);
+        note("delivered", `${raw.length}b creds`);
       } catch (err) {
         job.state = "failed";
         job.error = `Linked, but I couldn't send your session ID: ${err.message}`;
-        console.log(`[${id}] delivery failed: ${err.message}`);
+        note("delivery-failed", err.message);
       } finally {
         await cleanup();
       }
@@ -145,6 +168,7 @@ async function startPairing(phone, { site }) {
     const connect = async () => {
       if (settled) return;
       attempt += 1;
+      note("socket-open", `attempt ${attempt}`);
 
       sock = makeWASocket({
         version,
@@ -157,6 +181,7 @@ async function startPairing(phone, { site }) {
       });
 
       sock.ev.on("creds.update", async () => {
+        if (!credsWritten) note("creds-first-write");
         credsWritten = true;
         await saveCreds();
       });
@@ -167,11 +192,12 @@ async function startPairing(phone, { site }) {
         codeRequested = true;
         setTimeout(async () => {
           if (settled) return;
+          note("requesting-code");
           try {
             const code = await sock.requestPairingCode(phone);
             job.code = String(code).match(/.{1,4}/g).join("-");
             job.state = "waiting";
-            console.log(`[${id}] code issued`);
+            note("code-issued");
           } catch (err) {
             await fail(`WhatsApp wouldn't issue a code: ${err.message}`);
           }
@@ -179,14 +205,20 @@ async function startPairing(phone, { site }) {
       }
 
       sock.ev.on("connection.update", async (update) => {
-        const { connection, lastDisconnect } = update;
+        const { connection, lastDisconnect, qr } = update;
         if (settled) return;
+
+        // A QR here means the pairing-code request didn't take — Baileys fell
+        // back to the QR flow, which this site has no way to show.
+        if (qr) note("qr-offered", "pairing-code path did not take");
+        if (connection === "connecting") note("connecting");
 
         if (connection === "open") return void (await deliver());
         if (connection !== "close") return;
 
         const code = lastDisconnect?.error?.output?.statusCode;
-        console.log(`[${id}] closed (${code ?? "unknown"}) attempt ${attempt}`);
+        const why = lastDisconnect?.error?.message;
+        note("closed", `status=${code ?? "none"}${why ? ` "${String(why).slice(0, 60)}"` : ""}`);
 
         // A real rejection — no amount of reconnecting will help.
         if (code === DisconnectReason.loggedOut || code === DisconnectReason.forbidden) {

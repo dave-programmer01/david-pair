@@ -170,6 +170,9 @@ function showError(message) {
   go.textContent = "Get pairing code";
 }
 
+let currentJobId = null;
+let stalledAt = null;
+
 function fail(message) {
   clearInterval(polling);
   statusBox.classList.add("error");
@@ -181,6 +184,28 @@ function fail(message) {
   retry.textContent = "Start over";
   retry.onclick = () => location.reload();
   codeCard.appendChild(retry);
+
+  // A failed pair is hard to report usefully without the server's view of it,
+  // so make that view one click away.
+  const details = document.createElement("button");
+  details.textContent = "Show technical details";
+  details.style.background = "transparent";
+  details.style.color = "var(--muted)";
+  details.style.border = "1px solid var(--line)";
+  details.onclick = async () => {
+    details.disabled = true;
+    const pre = document.createElement("pre");
+    pre.style.cssText =
+      "white-space:pre-wrap;word-break:break-word;font-size:.75rem;background:var(--bg);" +
+      "border:1px solid var(--line);border-radius:9px;padding:.8rem;margin-top:.8rem;overflow-x:auto";
+    try {
+      pre.textContent = await (await fetch(`/api/debug/${currentJobId}`)).text();
+    } catch {
+      pre.textContent = "Couldn't load the details.";
+    }
+    codeCard.appendChild(pre);
+  };
+  codeCard.appendChild(details);
 }
 
 async function start() {
@@ -205,6 +230,7 @@ async function start() {
     return showError("Couldn't reach the server. Check your connection and try again.");
   }
 
+  currentJobId = job.id;
   formCard.classList.add("hidden");
   codeCard.classList.remove("hidden");
 
@@ -234,7 +260,15 @@ async function poll(id) {
     doneCard.classList.remove("hidden");
   }
 
-  if (job.state === "failed") fail(job.error || "Pairing failed. Please try again.");
+  if (job.state === "failed") return fail(job.error || "Pairing failed. Please try again.");
+
+  // A pair that simply stops moving used to sit on "waiting" forever with no
+  // way to tell what happened. Surface it after two minutes.
+  if (!stalledAt) stalledAt = { state: job.state, since: Date.now() };
+  if (stalledAt.state !== job.state) stalledAt = { state: job.state, since: Date.now() };
+  else if (Date.now() - stalledAt.since > 120_000) {
+    fail("This is taking longer than it should — WhatsApp hasn't responded.");
+  }
 }
 
 go.addEventListener("click", start);

@@ -73,6 +73,26 @@ app.get("/api/status/:id", (req, res) => {
   res.json(job);
 });
 
+/**
+ * Human-readable event trail for one pairing attempt, so a failure can be
+ * diagnosed from the browser rather than needing server log access.
+ * Carries no credentials and no phone number.
+ */
+app.get("/api/debug/:id", (req, res) => {
+  const job = getJob(req.params.id);
+  if (!job) return res.status(404).type("text/plain").send("That pairing session expired or never existed.");
+
+  const lines = [
+    `pairing ${job.id}`,
+    `state   ${job.state}`,
+    job.error ? `error   ${job.error}` : null,
+    "",
+    ...(job.trail || []).map((e) => `${String(e.at).padStart(6)}ms  ${e.event}${e.detail ? `  ${e.detail}` : ""}`),
+  ].filter(Boolean);
+
+  res.type("text/plain").send(lines.join("\n"));
+});
+
 app.get("/healthz", (_req, res) => res.json({ ok: true }));
 
 app.listen(PORT, () => {
