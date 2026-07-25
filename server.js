@@ -39,13 +39,11 @@ const siteUrl = (req) =>
 
 app.post("/api/pair", async (req, res) => {
   const ip = req.headers["x-forwarded-for"]?.split(",")[0].trim() || req.ip;
-
-  if (rateLimited(ip)) {
-    return res.status(429).json({ error: "Too many attempts. Wait a minute and try again." });
-  }
-
   const phone = String(req.body?.phone || "").replace(/[^0-9]/g, "");
 
+  // Validate before counting against the rate limit. A mistyped number costs
+  // nothing — only attempts that actually open a WhatsApp socket are counted,
+  // since those are what the limit exists to protect.
   if (phone.length < 8 || phone.length > 16) {
     return res.status(400).json({
       error: "That doesn't look right. Enter your full number with country code, digits only.",
@@ -55,6 +53,10 @@ app.post("/api/pair", async (req, res) => {
     return res.status(400).json({
       error: "Drop the leading 0 and start with your country code — e.g. 234 803 456 7890, not 0803…",
     });
+  }
+
+  if (rateLimited(ip)) {
+    return res.status(429).json({ error: "Too many attempts. Wait a minute and try again." });
   }
 
   try {
