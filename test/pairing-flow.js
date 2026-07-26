@@ -108,6 +108,19 @@ const assert = (ok, label, detail = "") => {
   assert(sent[0]?.text?.startsWith("David~"), "first message is the bare session ID");
   assert(!sent[0]?.text?.includes("STEP"), "session ID message has nothing else in it");
   assert(sent[1]?.text?.includes("config.js"), "second message is the tutorial");
+
+  // The ID must decode to a filename-keyed bundle, not bare creds. A regression
+  // to the old shape would still "work" for the bot, which accepts both, so
+  // nothing else here would notice.
+  const decoded = JSON.parse(
+    Buffer.from(sent[0].text.replace(/^David~/, ""), "base64").toString("utf8")
+  );
+  assert(!!decoded["creds.json"], "session ID is a filename-keyed bundle");
+  assert(
+    typeof decoded["creds.json"] === "string" &&
+      !!JSON.parse(Buffer.from(decoded["creds.json"], "base64").toString("utf8")).me,
+    "bundled creds.json decodes to real credentials"
+  );
   assert(sent[0].jid === "15551234567@s.whatsapp.net", "sent to the user's own number, device suffix stripped");
 
   console.log("\n── Genuine rejection still fails ─────────────────\n");

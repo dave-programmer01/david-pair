@@ -142,6 +142,9 @@ async function startPairing(phone, { site }) {
 
         if (!fs.existsSync(credsPath)) throw new Error("WhatsApp never sent the session data.");
 
+        // Bundle the whole session directory, keyed by filename, so the bot
+        // starts with its pre-keys and app-state keys already in place rather
+        // than rebuilding them on first connect.
         const files = {};
         for (const file of await fs.promises.readdir(dir)) {
           if (file.endsWith(".json")) {
@@ -150,6 +153,7 @@ async function startPairing(phone, { site }) {
           }
         }
         const sessionId = `David~${Buffer.from(JSON.stringify(files)).toString("base64")}`;
+        const fileCount = Object.keys(files).length;
 
         // sock.user.id carries a :device suffix that will not route.
         const me = jidNormalizedUser(sock.user.id);
@@ -161,7 +165,7 @@ async function startPairing(phone, { site }) {
 
         job.state = "sent";
         job.sentTo = me.split("@")[0];
-        note("delivered", `${raw.length}b creds`);
+        note("delivered", `${fileCount} files, ${sessionId.length} chars`);
       } catch (err) {
         job.state = "failed";
         job.error = `Linked, but I couldn't send your session ID: ${err.message}`;
@@ -214,9 +218,11 @@ async function startPairing(phone, { site }) {
         const { connection, lastDisconnect, qr } = update;
         if (settled) return;
 
-        // A QR here means the pairing-code request didn't take — Baileys fell
-        // back to the QR flow, which this site has no way to show.
-        if (qr) note("qr-offered", "pairing-code path did not take");
+        // Baileys always offers a QR on first connect, before the pairing code
+        // is requested — that one is routine. A QR arriving *after* a code was
+        // issued is the interesting case: it means the code was rejected and
+        // Baileys fell back to the QR flow, which this site can't display.
+        if (qr) note("qr-offered", job.code ? "after a code was issued — code path may have failed" : "routine, before code request");
         if (connection === "connecting") note("connecting");
 
         if (connection === "open") return void (await deliver());
