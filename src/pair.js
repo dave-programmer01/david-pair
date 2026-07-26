@@ -142,8 +142,14 @@ async function startPairing(phone, { site }) {
 
         if (!fs.existsSync(credsPath)) throw new Error("WhatsApp never sent the session data.");
 
-        const raw = await fs.promises.readFile(credsPath);
-        const sessionId = `David~${raw.toString("base64")}`;
+        const files = {};
+        for (const file of await fs.promises.readdir(dir)) {
+          if (file.endsWith(".json")) {
+            const data = await fs.promises.readFile(path.join(dir, file));
+            files[file] = data.toString("base64");
+          }
+        }
+        const sessionId = `David~${Buffer.from(JSON.stringify(files)).toString("base64")}`;
 
         // sock.user.id carries a :device suffix that will not route.
         const me = jidNormalizedUser(sock.user.id);

@@ -37,7 +37,7 @@ Replace the text between the quotes with the ID you just copied:
 
 Save the file. *That's the only edit you need.*
 
-_Tip: the ID is about 2500 characters. If you paste only part of it the bot will tell you so — copy the whole message._
+_Tip: the ID is a few thousand characters long. If you paste only part of it the bot will tell you so — copy the whole message._
 
 *STEP 3 — Start it*
 
